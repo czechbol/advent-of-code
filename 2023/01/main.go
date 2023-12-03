@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	inputFilePath = "2023/1/input/input.txt"
+	inputFilePath = "2023/01/input/input.txt"
 )
 
 var (

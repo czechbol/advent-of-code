@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	inputFilePath = "2023/2/input/input.txt"
+	inputFilePath = "2023/02/input/input.txt"
 	redCubes      = 12
 	greenCubes    = 13
 	blueCubes     = 14
