@@ -1,0 +1,234 @@
+# Day 2: Gift Shop
+
+```elixir
+Mix.install([
+  {:kino, "~> 0.18.0"}
+])
+```
+
+## Description
+
+You get inside and take the elevator to its only other stop: the gift shop. "Thank you for visiting the North Pole!" gleefully exclaims a nearby sign. You aren't sure who is even allowed to visit the North Pole, but you know you can access the lobby through here, and from there you can access the rest of the North Pole base.
+
+As you make your way through the surprisingly extensive selection, one of the clerks recognizes you and asks for your help.
+
+As it turns out, one of the younger Elves was playing on a gift shop computer and managed to add a whole bunch of invalid product IDs to their gift shop database! Surely, it would be no trouble for you to identify the invalid product IDs for them, right?
+
+```elixir
+input = Kino.Input.textarea("Please paste your input file:")
+```
+
+<!-- livebook:{"reevaluate_automatically":true} -->
+
+```elixir
+ranges =
+  input
+  |> Kino.Input.read()
+  |> String.splitter(",", trim: true)
+  |> Enum.map(fn line ->
+    [first, last] = String.split(line, "-")
+    {String.to_integer(first), String.to_integer(last)}
+  end)
+```
+
+## Part 1
+
+They've even checked most of the product ID ranges already; they only have a few product ID ranges (your puzzle input) that you'll need to check. For example:
+
+```
+11-22,95-115,998-1012,1188511880-1188511890,222220-222224,1698522-1698528,446443-446449,38593856-38593862,565653-565659,824824821-824824827,2121212118-2121212124
+```
+
+(The ID ranges are wrapped here for legibility; in your input, they appear on a single long line.)
+
+The ranges are separated by commas (,); each range gives its first ID and last ID separated by a dash (-).
+
+Since the young Elf was just doing silly patterns, you can find the invalid IDs by looking for any ID which is made only of some sequence of digits repeated twice. So, 55 (5 twice), 6464 (64 twice), and 123123 (123 twice) would all be invalid IDs.
+
+None of the numbers have leading zeroes; 0101 isn't an ID at all. (101 is a valid ID that you would ignore.)
+
+Your job is to find all of the invalid IDs that appear in the given ranges. In the above example:
+
+* 11-22 has two invalid IDs, 11 and 22.
+* 95-115 has one invalid ID, 99.
+* 998-1012 has one invalid ID, 1010.
+* 1188511880-1188511890 has one invalid ID, 1188511885.
+* 222220-222224 has one invalid ID, 222222.
+* 1698522-1698528 contains no invalid IDs.
+* 446443-446449 has one invalid ID, 446446.
+* 38593856-38593862 has one invalid ID, 38593859.
+* The rest of the ranges contain no invalid IDs.
+
+Adding up all the invalid IDs in this example produces 1227775554.
+
+What is the sum of all invalid IDs in your puzzle input?
+
+<!-- livebook:{"reevaluate_automatically":true} -->
+
+```elixir
+defmodule ProductID do
+  @moduledoc """
+  Functions to identify invalid product IDs based on repeating digit patterns.
+  """
+
+  @doc """
+  Generates all invalid IDs (doubled patterns) within a range.
+
+  ## Examples
+      iex> ProductID.generate_doubled_in_range(10, 25)
+      [11, 22]
+  """
+  def generate_doubled_in_range(from, to) do
+    from_len = from |> Integer.to_string() |> String.length()
+    to_len = to |> Integer.to_string() |> String.length()
+
+    # Only consider even lengths
+    from_len..to_len//1
+    |> Enum.filter(&(rem(&1, 2) == 0))
+    |> Enum.flat_map(fn num_len ->
+      pattern_len = div(num_len, 2)
+
+      # Generate all patterns of this length
+      min_pattern = max(1, Integer.pow(10, pattern_len - 1))
+      max_pattern = Integer.pow(10, pattern_len) - 1
+
+      min_pattern..max_pattern//1
+      |> Enum.map(fn pattern ->
+        # Create doubled number: pattern concatenated with itself
+        str = Integer.to_string(pattern)
+        String.to_integer(str <> str)
+      end)
+      |> Enum.filter(fn num -> num >= from and num <= to end)
+    end)
+  end
+
+  @doc """
+  Generates all invalid IDs (patterns repeated at least twice) within a range.
+  """
+  def generate_repeated_in_range(from, to) do
+    from_len = from |> Integer.to_string() |> String.length()
+    to_len = to |> Integer.to_string() |> String.length()
+
+    # Check all possible total lengths
+    from_len..to_len//1
+    |> Enum.flat_map(fn num_len ->
+      max_pattern_len = div(num_len, 2)
+
+      # Skip if pattern length would be 0 or negative
+      if max_pattern_len < 1 do
+        []
+      else
+        # For each length, try all possible pattern lengths that divide it
+        # and result in at least 2 repetitions
+        1..max_pattern_len//1
+        |> Enum.filter(fn pattern_len -> rem(num_len, pattern_len) == 0 end)
+        |> Enum.flat_map(fn pattern_len ->
+          repetitions = div(num_len, pattern_len)
+
+          # Generate all patterns of this length
+          min_pattern = max(1, Integer.pow(10, pattern_len - 1))
+          max_pattern = Integer.pow(10, pattern_len) - 1
+
+          min_pattern..max_pattern//1
+          |> Enum.map(fn pattern ->
+            # Create repeated number
+            str = Integer.to_string(pattern)
+            String.duplicate(str, repetitions) |> String.to_integer()
+          end)
+          |> Enum.filter(fn num -> num >= from and num <= to end)
+        end)
+      end
+    end)
+    |> Enum.uniq()
+  end
+
+  @doc """
+  Sums all doubled-pattern invalid IDs by generating them.
+  Time complexity: O(sqrt(range_size)) instead of O(range_size)
+  """
+  def sum_invalid_doubled(ranges) do
+    ranges
+    |> Enum.flat_map(fn {from, to} -> generate_doubled_in_range(from, to) end)
+    |> Enum.sum()
+  end
+
+  @doc """
+  Sums all repeated-pattern invalid IDs by generating them.
+  Time complexity: O(patterns * length) instead of O(range_size)
+  """
+  def sum_invalid_repeated(ranges) do
+    ranges
+    |> Enum.flat_map(fn {from, to} -> generate_repeated_in_range(from, to) end)
+    |> Enum.sum()
+  end
+end
+```
+
+## Part 2
+
+The clerk quickly discovers that there are still invalid IDs in the ranges in your list. Maybe the young Elf was doing other silly patterns as well?
+
+Now, an ID is invalid if it is made only of some sequence of digits repeated at least twice. So, 12341234 (1234 two times), 123123123 (123 three times), 1212121212 (12 five times), and 1111111 (1 seven times) are all invalid IDs.
+
+From the same example as before:
+
+* 11-22 still has two invalid IDs, 11 and 22.
+* 95-115 now has two invalid IDs, 99 and 111.
+* 998-1012 now has two invalid IDs, 999 and 1010.
+* 1188511880-1188511890 still has one invalid ID, 1188511885.
+* 222220-222224 still has one invalid ID, 222222.
+* 1698522-1698528 still contains no invalid IDs.
+* 446443-446449 still has one invalid ID, 446446.
+* 38593856-38593862 still has one invalid ID, 38593859.
+* 565653-565659 now has one invalid ID, 565656.
+* 824824821-824824827 now has one invalid ID, 824824824.
+* 2121212118-2121212124 now has one invalid ID, 2121212121.
+
+Adding up all the invalid IDs in this example produces 4174379265.
+
+What is the sum of all invalid IDs using this new definition?
+
+## Results
+
+```elixir
+defmodule Benchmark do
+  def run(fun, runs \\ 100) do
+    fun.()
+
+    times =
+      for _ <- 1..runs do
+        {time, _result} = :timer.tc(fun)
+        time
+      end
+
+    avg_time = Enum.sum(times) / runs
+    min_time = Enum.min(times)
+    max_time = Enum.max(times)
+
+    {avg_time / 1000, min_time / 1000, max_time / 1000}
+  end
+
+  def format_time(ms) when ms < 0.001, do: "#{Float.round(ms * 1000, 3)} μs"
+  def format_time(ms) when ms < 1, do: "#{Float.round(ms, 3)} ms"
+  def format_time(ms) when ms < 1000, do: "#{Float.round(ms, 2)} ms"
+  def format_time(ms), do: "#{Float.round(ms / 1000, 2)} s"
+end
+
+IO.puts("\n╔══════════════════════════════════════════════════════════╗")
+IO.puts("║                        DAY 02                            ║")
+IO.puts("╚══════════════════════════════════════════════════════════╝\n")
+
+{time, result} = :timer.tc(fn -> ProductID.sum_invalid_doubled(ranges) end)
+{avg, min, max} = Benchmark.run(fn -> ProductID.sum_invalid_doubled(ranges) end)
+
+IO.puts("Part 1: #{result}")
+IO.puts("  Time: #{Benchmark.format_time(time / 1000)}")
+IO.puts("  Avg:  #{Benchmark.format_time(avg)} (min: #{Benchmark.format_time(min)}, max: #{Benchmark.format_time(max)})")
+
+{time, result} = :timer.tc(fn -> ProductID.sum_invalid_repeated(ranges) end)
+{avg, min, max} = Benchmark.run(fn -> ProductID.sum_invalid_repeated(ranges) end)
+
+IO.puts("\nPart 2: #{result}")
+IO.puts("  Time: #{Benchmark.format_time(time / 1000)}")
+IO.puts("  Avg:  #{Benchmark.format_time(avg)} (min: #{Benchmark.format_time(min)}, max: #{Benchmark.format_time(max)})")
+```

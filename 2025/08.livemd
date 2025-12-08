@@ -1,0 +1,270 @@
+# Day 8: Playground
+
+```elixir
+Mix.install([
+  {:kino, "~> 0.18.0"}
+])
+```
+
+## Description
+
+Equipped with a new understanding of teleporter maintenance, you confidently step onto the repaired teleporter pad.
+
+You rematerialize on an unfamiliar teleporter pad and find yourself in a vast underground space which contains a giant playground!
+
+Across the playground, a group of Elves are working on setting up an ambitious Christmas decoration project. Through careful rigging, they have suspended a large number of small electrical junction boxes.
+
+Their plan is to connect the junction boxes with long strings of lights. Most of the junction boxes don't provide electricity; however, when two junction boxes are connected by a string of lights, electricity can pass between those two junction boxes.
+
+```elixir
+input = Kino.Input.textarea("Please paste your input file:")
+```
+
+<!-- livebook:{"reevaluate_automatically":true} -->
+
+```elixir
+raw_input =
+  input
+  |> Kino.Input.read()
+  |> String.split("\n", trim: true)
+```
+
+## Part 1
+
+The Elves are trying to figure out which junction boxes to connect so that electricity can reach every junction box. They even have a list of all of the junction boxes' positions in 3D space (your puzzle input).
+
+For example:
+
+```
+162,817,812
+57,618,57
+906,360,560
+592,479,940
+352,342,300
+466,668,158
+542,29,236
+431,825,988
+739,650,466
+52,470,668
+216,146,977
+819,987,18
+117,168,530
+805,96,715
+346,949,466
+970,615,88
+941,993,340
+862,61,35
+984,92,344
+425,690,689
+```
+
+This list describes the position of 20 junction boxes, one per line. Each position is given as X,Y,Z coordinates. So, the first junction box in the list is at X=162, Y=817, Z=812.
+
+To save on string lights, the Elves would like to focus on connecting pairs of junction boxes that are as close together as possible according to straight-line distance. In this example, the two junction boxes which are closest together are 162,817,812 and 425,690,689.
+
+By connecting these two junction boxes together, because electricity can flow between them, they become part of the same circuit. After connecting them, there is a single circuit which contains two junction boxes, and the remaining 18 junction boxes remain in their own individual circuits.
+
+Now, the two junction boxes which are closest together but aren't already directly connected are 162,817,812 and 431,825,988. After connecting them, since 162,817,812 is already connected to another junction box, there is now a single circuit which contains three junction boxes and an additional 17 circuits which contain one junction box each.
+
+The next two junction boxes to connect are 906,360,560 and 805,96,715. After connecting them, there is a circuit containing 3 junction boxes, a circuit containing 2 junction boxes, and 15 circuits which contain one junction box each.
+
+The next two junction boxes are 431,825,988 and 425,690,689. Because these two junction boxes were already in the same circuit, nothing happens!
+
+This process continues for a while, and the Elves are concerned that they don't have enough extension cables for all these circuits. They would like to know how big the circuits will be.
+
+After making the ten shortest connections, there are 11 circuits: one circuit which contains 5 junction boxes, one circuit which contains 4 junction boxes, two circuits which contain 2 junction boxes each, and seven circuits which each contain a single junction box. Multiplying together the sizes of the three largest circuits (5, 4, and one of the circuits of size 2) produces 40.
+
+Your list contains many junction boxes; connect together the 1000 pairs of junction boxes which are closest together. Afterward, what do you get if you multiply together the sizes of the three largest circuits?
+
+<!-- livebook:{"reevaluate_automatically":true} -->
+
+```elixir
+defmodule JunctionBoxes do
+  def part1(input) do
+    coordinates = parse_coordinates(input)
+    nodes = Map.keys(coordinates)
+    node_count = length(nodes)
+    uf = new_union_find(nodes)
+
+    target_edges = if node_count == 20, do: 10, else: 1000
+
+    edges_sorted =
+      nodes
+      |> generate_edges(coordinates)
+      |> Enum.sort_by(&elem(&1, 0), :asc)
+
+    {final_uf, _} =
+      Enum.reduce_while(edges_sorted, {uf, 0}, fn {_dist, i, j}, {uf_acc, count} ->
+        if count >= target_edges do
+          {:halt, {uf_acc, count}}
+        else
+          case union(i, j, uf_acc) do
+            {:merged, new_uf} -> {:cont, {new_uf, count + 1}}
+            {:no_change, new_uf} -> {:cont, {new_uf, count + 1}}
+          end
+        end
+      end)
+
+    final_uf
+    |> component_sizes()
+    |> Enum.sort(:desc)
+    |> Enum.take(3)
+    |> Enum.product()
+  end
+
+  def part2(input) do
+    coordinates = parse_coordinates(input)
+    nodes = Map.keys(coordinates)
+    uf = new_union_find(nodes)
+
+    edges_sorted =
+      nodes
+      |> generate_edges(coordinates)
+      |> Enum.sort_by(&elem(&1, 0), :asc)
+
+    node_count = length(nodes)
+    
+    {i, j, _, _} =
+      Enum.reduce_while(edges_sorted, {nil, nil, uf, node_count}, fn {_dist, i, j}, {last_i, last_j, uf_acc, comp_count} ->
+        if comp_count == 1 do
+          {:halt, {last_i, last_j, uf_acc, comp_count}}
+        else
+          case union(i, j, uf_acc) do
+            {:merged, new_uf} -> {:cont, {i, j, new_uf, comp_count - 1}}
+            {:no_change, new_uf} -> {:cont, {last_i, last_j, new_uf, comp_count}}
+          end
+        end
+      end)
+
+    {x1, _, _} = coordinates[i]
+    {x2, _, _} = coordinates[j]
+    x1 * x2
+  end
+
+  defp parse_coordinates(input) do
+    input
+    |> Enum.map(fn line ->
+      [x, y, z] = line |> String.split(",") |> Enum.map(&String.to_integer/1)
+      {x, y, z}
+    end)
+    |> Enum.with_index()
+    |> Map.new(fn {coord, idx} -> {idx, coord} end)
+  end
+
+  defp generate_edges(nodes, coordinates) do
+    for i <- nodes,
+        j <- nodes,
+        i < j do
+      {squared_distance(coordinates[i], coordinates[j]), i, j}
+    end
+  end
+
+  defp squared_distance({x1, y1, z1}, {x2, y2, z2}) do
+    dx = x1 - x2
+    dy = y1 - y2
+    dz = z1 - z2
+    dx * dx + dy * dy + dz * dz
+  end
+
+  defp new_union_find(nodes) when is_list(nodes) do
+    nodes
+    |> Enum.reduce(%{}, fn node, acc ->
+      Map.put(acc, node, {node, 0})
+    end)
+  end
+
+  defp find(node, uf) do
+    {parent, rank} = Map.get(uf, node)
+    if parent == node do
+      {node, uf}
+    else
+      {root, uf} = find(parent, uf)
+      {root, Map.put(uf, node, {root, rank})}
+    end
+  end
+
+  defp union(node_a, node_b, uf) do
+    {root_a, uf} = find(node_a, uf)
+    {root_b, uf} = find(node_b, uf)
+
+    if root_a == root_b do
+      {:no_change, uf}
+    else
+      {rank_a, _} = Map.get(uf, root_a)
+      {rank_b, _} = Map.get(uf, root_b)
+
+      if rank_a < rank_b do
+        {:merged, Map.put(uf, root_a, {root_b, rank_a})}
+      else
+        new_rank = if rank_a == rank_b, do: rank_b + 1, else: rank_a
+        {:merged, Map.put(uf, root_b, {root_a, new_rank})}
+      end
+    end
+  end
+
+  defp component_sizes(uf) do
+    uf
+    |> Enum.map(fn {node, _} ->
+      {root, _} = find(node, uf)
+      root
+    end)
+    |> Enum.reduce(%{}, fn root, acc ->
+      Map.update(acc, root, 1, &(&1 + 1))
+    end)
+    |> Map.values()
+  end
+end
+```
+
+## Part 2
+
+The Elves were right; they definitely don't have enough extension cables. You'll need to keep connecting junction boxes together until they're all in one large circuit.
+
+Continuing the above example, the first connection which causes all of the junction boxes to form a single circuit is between the junction boxes at 216,146,977 and 117,168,530. The Elves need to know how far those junction boxes are from the wall so they can pick the right extension cable; multiplying the X coordinates of those two junction boxes (216 and 117) produces 25272.
+
+Continue connecting the closest unconnected pairs of junction boxes together until they're all in the same circuit. What do you get if you multiply together the X coordinates of the last two junction boxes you need to connect?
+
+## Results
+
+```elixir
+defmodule Benchmark do
+  def run(fun, runs \\ 100) do
+    fun.()
+
+    times =
+      for _ <- 1..runs do
+        {time, _result} = :timer.tc(fun)
+        time
+      end
+
+    avg_time = Enum.sum(times) / runs
+    min_time = Enum.min(times)
+    max_time = Enum.max(times)
+
+    {avg_time / 1000, min_time / 1000, max_time / 1000}
+  end
+
+  def format_time(ms) when ms < 0.001, do: "#{Float.round(ms * 1000, 3)} μs"
+  def format_time(ms) when ms < 1, do: "#{Float.round(ms, 3)} ms"
+  def format_time(ms) when ms < 1000, do: "#{Float.round(ms, 2)} ms"
+  def format_time(ms), do: "#{Float.round(ms / 1000, 2)} s"
+end
+
+IO.puts("\n╔══════════════════════════════════════════════════════════╗")
+IO.puts("║                        DAY 08                            ║")
+IO.puts("╚══════════════════════════════════════════════════════════╝\n")
+
+{time, result} = :timer.tc(fn -> JunctionBoxes.part1(raw_input) end)
+IO.puts("Part 1: #{result}")
+{avg, min, max} = Benchmark.run(fn -> JunctionBoxes.part1(raw_input) end)
+
+IO.puts("  Time: #{Benchmark.format_time(time / 1000)}")
+IO.puts("  Avg:  #{Benchmark.format_time(avg)} (min: #{Benchmark.format_time(min)}, max: #{Benchmark.format_time(max)})")
+
+{time, result} = :timer.tc(fn -> JunctionBoxes.part2(raw_input) end)
+IO.puts("\nPart 2: #{result}")
+{avg, min, max} = Benchmark.run(fn -> JunctionBoxes.part2(raw_input) end)
+
+IO.puts("  Time: #{Benchmark.format_time(time / 1000)}")
+IO.puts("  Avg:  #{Benchmark.format_time(avg)} (min: #{Benchmark.format_time(min)}, max: #{Benchmark.format_time(max)})")
+```

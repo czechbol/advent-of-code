@@ -1,0 +1,188 @@
+# Day 6: Trash Compactor
+
+```elixir
+Mix.install([
+  {:kino, "~> 0.18.0"}
+])
+```
+
+## Description
+
+After helping the Elves in the kitchen, you were taking a break and helping them re-enact a movie scene when you over-enthusiastically jumped into the garbage chute!
+
+A brief fall later, you find yourself in a garbage smasher. Unfortunately, the door's been magnetically sealed.
+
+As you try to find a way out, you are approached by a family of cephalopods! They're pretty sure they can get the door open, but it will take some time. While you wait, they're curious if you can help the youngest cephalopod with her math homework.
+
+```elixir
+input = Kino.Input.textarea("Please paste your input file:")
+```
+
+<!-- livebook:{"reevaluate_automatically":true} -->
+
+```elixir
+raw_input =
+  Kino.Input.read(input)
+  |> String.split("\n", trim: true)
+
+is_blank = fn row -> Enum.all?(row, fn cell -> cell == " " end) end
+
+pt1_input =
+  raw_input
+  |> Enum.map(fn line -> String.split(line) end)
+  |> Enum.reverse()
+  |> Enum.zip_with(& &1)
+  |> Enum.map(fn problem ->
+    operator = problem |> List.first()
+
+    numbers =
+      problem
+      |> Enum.drop(1)
+      |> Enum.map(fn num ->
+        String.to_integer(num)
+      end)
+
+    {operator, Enum.reverse(numbers)}
+  end)
+
+pt2_input =
+  raw_input
+  |> Enum.map(&String.graphemes/1)
+  |> Enum.reverse()
+  |> Enum.zip_with(& &1)
+  |> Enum.chunk_by(&is_blank.(&1))
+  |> Enum.filter(fn chunk -> not is_blank.(List.first(chunk)) end)
+  |> Enum.map(fn chunk ->
+    operator = chunk |> List.first() |> List.first()
+
+    numbers =
+      chunk
+      |> Enum.map(fn row ->
+        row
+        |> Enum.drop(1)
+        |> Enum.reverse()
+        |> Enum.join()
+        |> String.trim()
+        |> String.to_integer()
+      end)
+
+    {operator, Enum.reverse(numbers)}
+  end)
+
+```
+
+## Part 1
+
+Cephalopod math doesn't look that different from normal math. The math worksheet (your puzzle input) consists of a list of problems; each problem has a group of numbers that need to be either added (+) or multiplied (\*) together.
+
+However, the problems are arranged a little strangely; they seem to be presented next to each other in a very long horizontal list. For example:
+
+```
+123 328  51 64
+ 45 64  387 23
+  6 98  215 314
+*   +   *   +  
+```
+
+Each problem's numbers are arranged vertically; at the bottom of the problem is the symbol for the operation that needs to be performed. Problems are separated by a full column of only spaces. The left/right alignment of numbers within each problem can be ignored.
+
+So, this worksheet contains four problems:
+
+* 123 \* 45 \* 6 = 33210
+* 328 + 64 + 98 = 490
+* 51 \* 387 \* 215 = 4243455
+* 64 + 23 + 314 = 401
+
+To check their work, cephalopod students are given the grand total of adding together all of the answers to the individual problems. In this worksheet, the grand total is 33210 + 490 + 4243455 + 401 = 4277556.
+
+Of course, the actual worksheet is much wider. You'll need to make sure to unroll it completely so that you can read the problems clearly.
+
+Solve the problems on the math worksheet. What is the grand total found by adding together all of the answers to the individual problems?
+
+<!-- livebook:{"reevaluate_automatically":true} -->
+
+```elixir
+defmodule MathSolver do
+  def solve(problems) do
+    problems
+    |> Enum.map(fn {operator, numbers} ->
+      Enum.reduce(numbers, fn num, acc -> apply_op(operator, acc, num) end)
+    end)
+    |> Enum.sum()
+  end
+
+  def apply_op("+", a, b), do: a + b
+  def apply_op("*", a, b), do: a * b
+end
+```
+
+## Part 2
+
+The big cephalopods come back to check on how things are going. When they see that your grand total doesn't match the one expected by the worksheet, they realize they forgot to explain how to read cephalopod math.
+
+Cephalopod math is written right-to-left in columns. Each number is given in its own column, with the most significant digit at the top and the least significant digit at the bottom. (Problems are still separated with a column consisting only of spaces, and the symbol at the bottom of the problem is still the operator to use.)
+
+Here's the example worksheet again:
+
+```
+123 328  51 64 
+ 45 64  387 23 
+  6 98  215 314
+*   +   *   +  
+```
+
+Reading the problems right-to-left one column at a time, the problems are now quite different:
+
+* The rightmost problem is 4 + 431 + 623 = 1058
+* The second problem from the right is 175 * 581 * 32 = 3253600
+* The third problem from the right is 8 + 248 + 369 = 625
+* Finally, the leftmost problem is 356 * 24 * 1 = 8544
+
+Now, the grand total is 1058 + 3253600 + 625 + 8544 = 3263827.
+
+Solve the problems on the math worksheet again. What is the grand total found by adding together all of the answers to the individual problems?
+
+## Results
+
+```elixir
+defmodule Benchmark do
+  def run(fun, runs \\ 100) do
+    fun.()
+
+    times =
+      for _ <- 1..runs do
+        {time, _result} = :timer.tc(fun)
+        time
+      end
+
+    avg_time = Enum.sum(times) / runs
+    min_time = Enum.min(times)
+    max_time = Enum.max(times)
+
+    {avg_time / 1000, min_time / 1000, max_time / 1000}
+  end
+
+  def format_time(ms) when ms < 0.001, do: "#{Float.round(ms * 1000, 3)} μs"
+  def format_time(ms) when ms < 1, do: "#{Float.round(ms, 3)} ms"
+  def format_time(ms) when ms < 1000, do: "#{Float.round(ms, 2)} ms"
+  def format_time(ms), do: "#{Float.round(ms / 1000, 2)} s"
+end
+
+IO.puts("\n╔══════════════════════════════════════════════════════════╗")
+IO.puts("║                        DAY 06                            ║")
+IO.puts("╚══════════════════════════════════════════════════════════╝\n")
+
+{time, result} = :timer.tc(fn -> MathSolver.solve(pt1_input) end)
+{avg, min, max} = Benchmark.run(fn -> MathSolver.solve(pt1_input) end)
+
+IO.puts("Part 1: #{result}")
+IO.puts("  Time: #{Benchmark.format_time(time / 1000)}")
+IO.puts("  Avg:  #{Benchmark.format_time(avg)} (min: #{Benchmark.format_time(min)}, max: #{Benchmark.format_time(max)})")
+
+{time, result} = :timer.tc(fn -> MathSolver.solve(pt2_input) end)
+{avg, min, max} = Benchmark.run(fn -> MathSolver.solve(pt2_input) end)
+
+IO.puts("\nPart 2: #{result}")
+IO.puts("  Time: #{Benchmark.format_time(time / 1000)}")
+IO.puts("  Avg:  #{Benchmark.format_time(avg)} (min: #{Benchmark.format_time(min)}, max: #{Benchmark.format_time(max)})")
+```

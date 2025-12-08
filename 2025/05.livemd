@@ -1,0 +1,218 @@
+# Day 5: Cafeteria
+
+```elixir
+Mix.install([
+  {:kino, "~> 0.18.0"}
+])
+```
+
+## Description
+
+As the forklifts break through the wall, the Elves are delighted to discover that there was a cafeteria on the other side after all.
+
+You can hear a commotion coming from the kitchen. "At this rate, we won't have any time left to put the wreaths up in the dining hall!" Resolute in your quest, you investigate.
+
+"If only we hadn't switched to the new inventory management system right before Christmas!" another Elf exclaims. You ask what's going on.
+
+The Elves in the kitchen explain the situation: because of their complicated new inventory management system, they can't figure out which of their ingredients are fresh and which are spoiled. When you ask how it works, they give you a copy of their database (your puzzle input).
+
+```elixir
+input = Kino.Input.textarea("Please paste your input file:")
+```
+
+<!-- livebook:{"reevaluate_automatically":true} -->
+
+```elixir
+raw_input = Kino.Input.read(input)
+
+[ranges_text, ids_text] = String.split(raw_input, "\n\n", trim: true)
+
+ranges =
+  ranges_text
+  |> String.split("\n", trim: true)
+  |> Enum.map(fn line ->
+    [start, stop] = String.split(line, "-")
+    {String.to_integer(start), String.to_integer(stop)}
+  end)
+
+ids =
+  ids_text
+  |> String.split("\n", trim: true)
+  |> Enum.map(&String.to_integer/1)
+```
+
+## Part 1
+
+The database operates on ingredient IDs. It consists of a list of fresh ingredient ID ranges, a blank line, and a list of available ingredient IDs. For example:
+
+```
+3-5
+10-14
+16-20
+12-18
+
+1
+5
+8
+11
+17
+32
+```
+
+The fresh ID ranges are inclusive: the range 3-5 means that ingredient IDs 3, 4, and 5 are all fresh. The ranges can also overlap; an ingredient ID is fresh if it is in any range.
+
+The Elves are trying to determine which of the available ingredient IDs are fresh. In this example, this is done as follows:
+
+* Ingredient ID 1 is spoiled because it does not fall into any range.
+* Ingredient ID 5 is fresh because it falls into range 3-5.
+* Ingredient ID 8 is spoiled.
+* Ingredient ID 11 is fresh because it falls into range 10-14.
+* Ingredient ID 17 is fresh because it falls into range 16-20 as well as range 12-18.
+* Ingredient ID 32 is spoiled.
+
+So, in this example, 3 of the available ingredient IDs are fresh.
+
+Process the database file from the new inventory management system. How many of the available ingredient IDs are fresh?
+
+<!-- livebook:{"reevaluate_automatically":true} -->
+
+```elixir
+defmodule Ingredients do
+  @moduledoc """
+  Functions to analyze ingredient freshness based on ID ranges.
+  Optimized for performance with range merging and binary search.
+  """
+
+  @doc """
+  Checks if an ingredient ID is fresh using binary search on sorted ranges.
+  """
+  def fresh?(id, ranges) when is_list(ranges) do
+    binary_search_ranges(id, ranges, 0, length(ranges) - 1)
+  end
+
+  defp binary_search_ranges(_id, _ranges, left, right) when left > right, do: false
+
+  defp binary_search_ranges(id, ranges, left, right) do
+    mid = div(left + right, 2)
+    {start, stop} = Enum.at(ranges, mid)
+
+    cond do
+      id >= start and id <= stop -> true
+      id < start -> binary_search_ranges(id, ranges, left, mid - 1)
+      id > stop -> binary_search_ranges(id, ranges, mid + 1, right)
+    end
+  end
+
+  @doc """
+  Counts how many ingredient IDs are fresh.
+  Optimized by pre-merging overlapping ranges.
+  """
+  def count_fresh(ranges, ids) do
+    # Pre-merge and sort ranges once for O(m log m) instead of checking O(n*m)
+    merged_ranges = merge_ranges(ranges)
+
+    # Now check each ID against merged ranges using binary search: O(n log m)
+    Enum.count(ids, fn id -> fresh?(id, merged_ranges) end)
+  end
+
+  @doc """
+  Part 2: Count total ingredient IDs considered fresh by the ranges.
+  """
+  def count_fresh_in_ranges(ranges) do
+    # Sort and merge overlapping ranges
+    merged_ranges = merge_ranges(ranges)
+
+    # Sum up the size of each merged range
+    Enum.reduce(merged_ranges, 0, fn {start, stop}, acc ->
+      acc + (stop - start + 1)
+    end)
+  end
+
+  @doc """
+  Merges overlapping and adjacent ranges.
+  Returns a sorted list of non-overlapping ranges.
+  Time complexity: O(m log m) where m is the number of ranges.
+  """
+  def merge_ranges(ranges) do
+    ranges
+    |> Enum.sort()
+    |> Enum.reduce([], fn {start, stop}, acc ->
+      case acc do
+        [] ->
+          [{start, stop}]
+
+        [{prev_start, prev_stop} | rest] when start <= prev_stop + 1 ->
+          [{prev_start, max(prev_stop, stop)} | rest]
+
+        _ ->
+          [{start, stop} | acc]
+      end
+    end)
+    |> Enum.reverse()
+  end
+end
+```
+
+## Part 2
+
+The Elves start bringing their spoiled inventory to the trash chute at the back of the kitchen.
+
+So that they can stop bugging you when they get new inventory, the Elves would like to know all of the IDs that the fresh ingredient ID ranges consider to be fresh. An ingredient ID is still considered fresh if it is in any range.
+
+Now, the second section of the database (the available ingredient IDs) is irrelevant. Here are the fresh ingredient ID ranges from the above example:
+
+```
+3-5
+10-14
+16-20
+12-18
+```
+
+The ingredient IDs that these ranges consider to be fresh are 3, 4, 5, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, and 20. So, in this example, the fresh ingredient ID ranges consider a total of 14 ingredient IDs to be fresh.
+
+Process the database file again. How many ingredient IDs are considered to be fresh according to the fresh ingredient ID ranges?
+
+## Results
+
+```elixir
+defmodule Benchmark do
+  def run(fun, runs \\ 100) do
+    fun.()
+
+    times =
+      for _ <- 1..runs do
+        {time, _result} = :timer.tc(fun)
+        time
+      end
+
+    avg_time = Enum.sum(times) / runs
+    min_time = Enum.min(times)
+    max_time = Enum.max(times)
+
+    {avg_time / 1000, min_time / 1000, max_time / 1000}
+  end
+
+  def format_time(ms) when ms < 0.001, do: "#{Float.round(ms * 1000, 3)} μs"
+  def format_time(ms) when ms < 1, do: "#{Float.round(ms, 3)} ms"
+  def format_time(ms) when ms < 1000, do: "#{Float.round(ms, 2)} ms"
+  def format_time(ms), do: "#{Float.round(ms / 1000, 2)} s"
+end
+
+IO.puts("\n╔══════════════════════════════════════════════════════════╗")
+IO.puts("║                        DAY 05                            ║")
+IO.puts("╚══════════════════════════════════════════════════════════╝\n")
+
+{time, result} = :timer.tc(fn -> Ingredients.count_fresh(ranges, ids) end)
+{avg, min, max} = Benchmark.run(fn -> Ingredients.count_fresh(ranges, ids) end)
+
+IO.puts("Part 1: #{result}")
+IO.puts("  Time: #{Benchmark.format_time(time / 1000)}")
+IO.puts("  Avg:  #{Benchmark.format_time(avg)} (min: #{Benchmark.format_time(min)}, max: #{Benchmark.format_time(max)})")
+
+{time, result} = :timer.tc(fn -> Ingredients.count_fresh_in_ranges(ranges) end)
+{avg, min, max} = Benchmark.run(fn -> Ingredients.count_fresh_in_ranges(ranges) end)
+
+IO.puts("\nPart 2: #{result}")
+IO.puts("  Time: #{Benchmark.format_time(time / 1000)}")
+IO.puts("  Avg:  #{Benchmark.format_time(avg)} (min: #{Benchmark.format_time(min)}, max: #{Benchmark.format_time(max)})")
+```
