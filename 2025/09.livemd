@@ -1,0 +1,351 @@
+# Day 9: Movie Theater
+
+```elixir
+Mix.install([
+  {:kino, "~> 0.18.0"}
+])
+```
+
+## Description
+
+You slide down the firepole in the corner of the playground and land in the North Pole base movie theater!
+
+```elixir
+input = Kino.Input.textarea("Please paste your input file:")
+```
+
+<!-- livebook:{"reevaluate_automatically":true} -->
+
+```elixir
+input_list =
+  input
+  |> Kino.Input.read()
+  |> String.split("\n", trim: true)
+  |> Enum.map(fn line ->
+    [x, y] = String.split(line, ",")
+    {String.to_integer(x), String.to_integer(y)}
+  end)
+```
+
+## Part 1
+
+The movie theater has a big tile floor with an interesting pattern. Elves here are redecorating the theater by switching out some of the square tiles in the big grid they form. Some of the tiles are red; the Elves would like to find the largest rectangle that uses red tiles for two of its opposite corners. They even have a list of where the red tiles are located in the grid (your puzzle input).
+
+For example:
+
+```
+7,1
+11,1
+11,7
+9,7
+9,5
+2,5
+2,3
+7,3
+```
+
+Showing red tiles as # and other tiles as ., the above arrangement of red tiles would look like this:
+
+```
+..............
+.......#...#..
+..............
+..#....#......
+..............
+..#......#....
+..............
+.........#.#..
+..............
+```
+
+You can choose any two red tiles as the opposite corners of your rectangle; your goal is to find the largest rectangle possible.
+
+For example, you could make a rectangle (shown as O) with an area of 24 between 2,5 and 9,7:
+
+```
+..............
+.......#...#..
+..............
+..#....#......
+..............
+..OOOOOOOO....
+..OOOOOOOO....
+..OOOOOOOO.#..
+..............
+```
+
+Or, you could make a rectangle with area 35 between 7,1 and 11,7:
+
+```
+..............
+.......OOOOO..
+.......OOOOO..
+..#....OOOOO..
+.......OOOOO..
+..#....OOOOO..
+.......OOOOO..
+.......OOOOO..
+..............
+```
+
+You could even make a thin rectangle with an area of only 6 between 7,3 and 2,3:
+
+```
+..............
+.......#...#..
+..............
+..OOOOOO......
+..............
+..#......#....
+..............
+.........#.#..
+..............
+```
+
+Ultimately, the largest rectangle you can make in this example has area 50. One way to do this is between 2,5 and 11,1:
+
+```
+..............
+..OOOOOOOOOO..
+..OOOOOOOOOO..
+..OOOOOOOOOO..
+..OOOOOOOOOO..
+..OOOOOOOOOO..
+..............
+.........#.#..
+..............
+```
+
+Using two red tiles as opposite corners, what is the largest area of any rectangle you can make?
+
+<!-- livebook:{"reevaluate_automatically":true} -->
+
+```elixir
+defmodule TileRenovations do
+  def part1(points) do
+    points
+    |> tile_pairs()
+    |> Enum.map(fn {t1, t2} -> area(t1, t2) end)
+    |> Enum.max()
+  end
+
+  def part2(points) do
+    edges = get_edges(points)
+    pairs = tile_pairs(points)
+    chunk_size = max(div(length(pairs), System.schedulers_online() * 4), 100)
+    
+    pairs
+    |> Enum.chunk_every(chunk_size)
+    |> Task.async_stream(
+      fn chunk ->
+        Enum.reduce(chunk, 0, fn rect, max_area ->
+          if rectangle_valid?(rect, edges) do
+            max(area(elem(rect, 0), elem(rect, 1)), max_area)
+          else
+            max_area
+          end
+        end)
+      end,
+      ordered: false,
+      timeout: :infinity
+    )
+    |> Enum.map(fn {:ok, val} -> val end)
+    |> Enum.max()
+  end
+  
+  defp find_largest_valid([{area, rect} | rest], edges, max_area) do
+    cond do
+      # Can't beat current max, stop
+      area <= max_area ->
+        max_area
+      
+      # Check if valid
+      rectangle_valid?(rect, edges) ->
+        find_largest_valid(rest, edges, area)
+      
+      # Keep searching
+      true ->
+        find_largest_valid(rest, edges, max_area)
+    end
+  end
+
+  defp rectangle_valid?(rect, edges) do
+    not Enum.any?(edges, &edge_crosses_rectangle?(&1, rect))
+  end
+
+  defp area({x1, y1}, {x2, y2}) do
+    (abs(x1 - x2) + 1) * (abs(y1 - y2) + 1)
+  end
+
+  defp tile_pairs(tiles) do
+    tiles
+    |> Enum.with_index()
+    |> Enum.flat_map(fn {t1, i} ->
+      tiles
+      |> Enum.drop(i + 1)
+      |> Enum.map(fn t2 -> {t1, t2} end)
+    end)
+  end
+
+  defp get_edges(tiles) do
+    tiles
+    |> Enum.with_index()
+    |> Enum.map(fn {t, i} ->
+      {t, Enum.at(tiles, rem(i + 1, length(tiles)))}
+    end)
+  end
+
+  defp edge_crosses_rectangle?({{ex1, ey1}, {ex2, ey2}}, {{rx1, ry1}, {rx2, ry2}}) do
+    if ex1 == ex2 do
+      # Vertical edge - inline for performance
+      x = ex1
+      ey_min = min(ey1, ey2)
+      ey_max = max(ey1, ey2)
+      ry_min = min(ry1, ry2)
+      ry_max = max(ry1, ry2)
+      
+      between = if rx1 <= rx2, do: x > rx1 and x < rx2, else: x > rx2 and x < rx1
+      overlap = if ey_min <= ry_min, do: ey_max > ry_min, else: ry_max > ey_min
+      
+      between and overlap
+    else
+      # Horizontal edge
+      y = ey1
+      ex_min = min(ex1, ex2)
+      ex_max = max(ex1, ex2)
+      rx_min = min(rx1, rx2)
+      rx_max = max(rx1, rx2)
+      
+      between = if ry1 <= ry2, do: y > ry1 and y < ry2, else: y > ry2 and y < ry1
+      overlap = if ex_min <= rx_min, do: ex_max > rx_min, else: rx_max > ex_min
+      
+      between and overlap
+    end
+  end
+end
+```
+
+## Part 2
+
+The Elves just remembered: they can only switch out tiles that are red or green. So, your rectangle can only include red or green tiles.
+
+In your list, every red tile is connected to the red tile before and after it by a straight line of green tiles. The list wraps, so the first red tile is also connected to the last red tile. Tiles that are adjacent in your list will always be on either the same row or the same column.
+
+Using the same example as before, the tiles marked X would be green:
+
+```
+..............
+.......#XXX#..
+.......X...X..
+..#XXXX#...X..
+..X........X..
+..#XXXXXX#.X..
+.........X.X..
+.........#X#..
+..............
+```
+
+In addition, all of the tiles inside this loop of red and green tiles are also green. So, in this example, these are the green tiles:
+
+```
+..............
+.......#XXX#..
+.......XXXXX..
+..#XXXX#XXXX..
+..XXXXXXXXXX..
+..#XXXXXX#XX..
+.........XXX..
+.........#X#..
+..............
+```
+
+The remaining tiles are never red nor green.
+
+The rectangle you choose still must have red tiles in opposite corners, but any other tiles it includes must now be red or green. This significantly limits your options.
+
+For example, you could make a rectangle out of red and green tiles with an area of 15 between 7,3 and 11,1:
+
+```
+..............
+.......OOOOO..
+.......OOOOO..
+..#XXXXOOOOO..
+..XXXXXXXXXX..
+..#XXXXXX#XX..
+.........XXX..
+.........#X#..
+..............
+```
+
+Or, you could make a thin rectangle with an area of 3 between 9,7 and 9,5:
+
+```
+..............
+.......#XXX#..
+.......XXXXX..
+..#XXXX#XXXX..
+..XXXXXXXXXX..
+..#XXXXXXOXX..
+.........OXX..
+.........OX#..
+..............
+```
+
+The largest rectangle you can make in this example using only red and green tiles has area 24. One way to do this is between 9,5 and 2,3:
+
+```
+..............
+.......#XXX#..
+.......XXXXX..
+..OOOOOOOOXX..
+..OOOOOOOOXX..
+..OOOOOOOOXX..
+.........XXX..
+.........#X#..
+..............
+```
+
+Using two red tiles as opposite corners, what is the largest area of any rectangle you can make using only red and green tiles?
+
+## Results
+
+```elixir
+defmodule Benchmark do
+  def run(fun, runs \\ 100) do
+    fun.()
+
+    times =
+      for _ <- 1..runs do
+        {time, _result} = :timer.tc(fun)
+        time
+      end
+
+    avg_time = Enum.sum(times) / runs
+    min_time = Enum.min(times)
+    max_time = Enum.max(times)
+
+    {avg_time / 1000, min_time / 1000, max_time / 1000}
+  end
+
+  def format_time(ms) when ms < 0.001, do: "#{Float.round(ms * 1000, 3)} μs"
+  def format_time(ms) when ms < 1, do: "#{Float.round(ms, 3)} ms"
+  def format_time(ms) when ms < 1000, do: "#{Float.round(ms, 2)} ms"
+  def format_time(ms), do: "#{Float.round(ms / 1000, 2)} s"
+end
+
+IO.puts("\n╔══════════════════════════════════════════════════════════╗")
+IO.puts("║                        DAY 09                            ║")
+IO.puts("╚══════════════════════════════════════════════════════════╝\n")
+
+{time, result} = :timer.tc(fn -> TileRenovations.part1(input_list) end)
+IO.puts("Part 1: #{result}")
+{avg, min, max} = Benchmark.run(fn -> TileRenovations.part1(input_list) end)
+IO.puts("  Time: #{Benchmark.format_time(time / 1000)}")
+IO.puts("  Avg:  #{Benchmark.format_time(avg)} (min: #{Benchmark.format_time(min)}, max: #{Benchmark.format_time(max)})")
+
+{time, result} = :timer.tc(fn -> TileRenovations.part2(input_list) end)
+IO.puts("\nPart 2: #{result}")
+{avg, min, max} = Benchmark.run(fn -> TileRenovations.part2(input_list) end, 10)
+IO.puts("  Time: #{Benchmark.format_time(time / 1000)}")
+IO.puts("  Avg:  #{Benchmark.format_time(avg)} (min: #{Benchmark.format_time(min)}, max: #{Benchmark.format_time(max)})")
+```
